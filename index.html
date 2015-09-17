@@ -4,6 +4,11 @@
 		<title>Eagle Schematics Viewer</title>
 		<meta charset="utf-8">
 		<script>
+			minDrawX = 99999;
+			maxDrawX = -99999;
+			minDrawY = 99999;
+			maxDrawY = -99999;
+
 			//check if the first node is an element node
 			function getFirstchild(n) {
 				var child=n.firstChild;
@@ -12,7 +17,14 @@
 				}
 				return child;
 			}
-			
+
+			function updateMinMax(x,y) {
+				if (x < minDrawX) minDrawX = x;
+				if (x > maxDrawX) maxDrawX = x;
+				if (y < minDrawY) minDrawY = y;
+				if (y > maxDrawY) maxDrawY = y;
+			}
+
 			function rotate(coord, angle) {
 				var x = coord.x*Math.cos(angle*Math.PI/180) - coord.y*Math.sin(angle*Math.PI/180);
 				var y = coord.x*Math.sin(angle*Math.PI/180) + coord.y*Math.cos(angle*Math.PI/180);
@@ -20,7 +32,7 @@
 				coord.y = y;
 			}
 
-			function drawSymbol(symbol, ctx, x, y, grot, name = "", value = "", zoom = 4) {
+			function drawSymbol(symbol, ctx, x, y, grot, name = "", value = "", draw = true, zoom = 4) {
 			// 	document.write("Draw symbol: "+symbol.attributes.getNamedItem("name").value+" at x: "+zoom*x+", y: "+zoom*y+"<br>");
 				for (var i=0;i<symbol.childNodes.length;i++) {
 					var node = symbol.childNodes[i];
@@ -35,12 +47,17 @@
 						var x2 = zoom*(x+coord2.x);
 						var y2 = -zoom*(y+coord2.y);
 						var width = zoom*parseFloat(node.attributes.getNamedItem("width").value);
-						ctx.lineWidth = width;
-						ctx.beginPath();
-						ctx.moveTo(x1,y1);
-						ctx.lineTo(x2,y2);
-						ctx.stroke();
-						ctx.lineWidth = 1;
+						if (draw) {
+							ctx.lineWidth = width;
+							ctx.beginPath();
+							ctx.moveTo(x1,y1);
+							ctx.lineTo(x2,y2);
+							ctx.stroke();
+							ctx.lineWidth = 1;
+						} else {
+							updateMinMax(x1,y1);
+							updateMinMax(x2,y2);
+						}
 					} else if (node.tagName == "rectangle") {
 						var coord1 = {x: parseFloat(node.attributes.getNamedItem("x1").value), y: parseFloat(node.attributes.getNamedItem("y1").value)};
 						var coord2 = {x: parseFloat(node.attributes.getNamedItem("x2").value), y: parseFloat(node.attributes.getNamedItem("y2").value)};
@@ -51,7 +68,12 @@
 						var x2 = zoom*(x+coord2.x);
 						var y2 = -zoom*(y+coord2.y);
 		// 				document.write("Rect: "+name+" ("+x1+","+y1+")..("+x2+","+y2+")<br>");
-						ctx.fillRect(x1,y1,x2-x1,y2-y1);
+						if (draw) {
+							ctx.fillRect(x1,y1,x2-x1,y2-y1);
+						} else {
+							updateMinMax(x1,y1);
+							updateMinMax(x2,y2);
+						}
 					} else if (node.tagName == "text") {
 						var textHeight = 0; //ctx.font.line-height;
 						var coord = {x: parseFloat(node.attributes.getNamedItem("x").value), y: parseFloat(node.attributes.getNamedItem("y").value)};
@@ -61,7 +83,11 @@
 						var text = node.textContent;
 						if (text.indexOf("NAME")>-1) text = name;
 						else if (text.indexOf("VALUE")>-1) text = value;
-						ctx.fillText(text,xx,yy);
+						if (draw) {
+							ctx.fillText(text,xx,yy);
+						} else {
+							updateMinMax(xx,yy);
+						}
 					} else if (node.tagName == "pin") {
 						var len = 0;
 						if (node.hasAttribute("length")) {
@@ -78,45 +104,47 @@
 						}
 						var lrot = 0;
 						if (node.hasAttribute("rot")) lrot = parseFloat(node.attributes.getNamedItem("rot").value.substring(1));
-// 						document.write(symbol.attributes.getNamedItem("name").value+": grot: "+grot+", lrot: "+lrot+"<br>");
 
 						var coord1 = {x: parseFloat(node.attributes.getNamedItem("x").value), y: parseFloat(node.attributes.getNamedItem("y").value)};
 						var coord2 = {x: len, y: 0};
-// 						document.write("Before: x1: "+coord1.x+", y1: "+coord1.y+", x2: "+coord2.x+", y2: "+coord2.y+"<br>");
 						rotate(coord2, lrot);
 						coord2.x = coord1.x+coord2.x;
 						coord2.y = coord1.y+coord2.y;
 						rotate(coord2, grot);
 						rotate(coord1, grot);
-// 						document.write("After: x1: "+coord1.x+", y1: "+coord1.y+", x2: "+coord2.x+", y2: "+coord2.y+"<br>");
 
 						var x1 = zoom*(x+coord1.x);
 						var y1 = -zoom*(y+coord1.y);
 						var x2 = zoom*(x+coord2.x);
 						var y2 = -zoom*(y+coord2.y);
-						var textWidth = ctx.measureText(node.attributes.getNamedItem("name").value).width;
 
-						ctx.beginPath();
-						ctx.moveTo(x1,y1);
-						ctx.lineTo(x2,y2);
-						ctx.stroke();
+						if (draw) {
+							var textWidth = ctx.measureText(node.attributes.getNamedItem("name").value).width;
+							ctx.beginPath();
+							ctx.moveTo(x1,y1);
+							ctx.lineTo(x2,y2);
+							ctx.stroke();
 
-						if (!(node.hasAttribute("visible") && node.attributes.getNamedItem("visible").value == "off")) {
-							if (lrot+grot == 0) {
+							if (!(node.hasAttribute("visible") && node.attributes.getNamedItem("visible").value == "off")) {
+								if (lrot+grot == 0) {
+									ctx.textAlign = "start";
+									ctx.textBaseline="middle";
+								} else if (lrot+grot == 180) {
+									ctx.textAlign = "end";
+									ctx.textBaseline="middle";
+								} else if (lrot+grot == 270) {
+									ctx.textAlign = "center";
+									ctx.textBaseline="top";
+								} else if (lrot+grot == 90) {
+									ctx.textAlign = "center";
+									ctx.textBaseline="bottom";
+								}
+								ctx.fillText(node.attributes.getNamedItem("name").value,x2,y2);
 								ctx.textAlign = "start";
-								ctx.textBaseline="middle";
-							} else if (lrot+grot == 180) {
-								ctx.textAlign = "end";
-								ctx.textBaseline="middle";
-							} else if (lrot+grot == 270) {
-								ctx.textAlign = "center";
-								ctx.textBaseline="top";
-							} else if (lrot+grot == 90) {
-								ctx.textAlign = "center";
-								ctx.textBaseline="bottom";
 							}
-							ctx.fillText(node.attributes.getNamedItem("name").value,x2,y2);
-							ctx.textAlign = "start";
+						} else {
+							updateMinMax(x1,y1);
+							updateMinMax(x2,y2);
 						}
 					}
 				}
@@ -127,98 +155,48 @@
 				xmlhttp.open("GET",url,false);
 				xmlhttp.send();
 				var xmlDoc=xmlhttp.responseXML;
-				drawSchematics(xmlDoc);
+				drawSchematics(xmlDoc, false);
+				drawSchematics(xmlDoc, true);
 			}
 
 			function drawSchematicsFromFileInput(content) {
 				var parser=new DOMParser();
 				var xmlDoc=parser.parseFromString(content,"text/xml");
-				drawSchematics(xmlDoc);
+				drawSchematics(xmlDoc, false);
+				drawSchematics(xmlDoc, true);
 			}
 
-			function getMinMax(parent, xy ,minmax) {
-				// not a good idea!!
-				// xpath browser implementations are not very fast...
-// 				minmax.max = xmlDoc.evaluate('((//@x|//@x1|//@x2|//@y|//@y1|//@y2)[not(. < (//@x|//@x1|//@x2|//@y|//@y1|//@y2))])[1]', xmlDoc, null, XPathResult.ANY_TYPE, null ).numberValue;
-// 				minmax.min = xmlDoc.evaluate('((//@x|//@x1|//@x2|//@y|//@y1|//@y2)[not(. > (//@x|//@x1|//@x2|//@y|//@y1|//@y2))])[1]', xmlDoc, null, XPathResult.ANY_TYPE, null ).numberValue;
+			function drawSchematics(xmlDoc, draw = true, zoom = 4) {
+				var canvas = document.getElementById("myCanvas");
 
-				var values = [];
-				for (s = 0; s<parent.length;s++) {
-					var items = parent[s].childNodes;
-					for (i = 0;i<items.length;i++) {
-						if (items[i].nodeType != 1) continue;
-						if (items[i].hasAttribute("x")) {
-							if (xy.contains("x")) {
-								var x = parseFloat(items[i].attributes.getNamedItem("x").value);
-								values.push(x);
-							}
-							if (xy.contains("y")) {
-								var y = parseFloat(items[i].attributes.getNamedItem("y").value);
-								values.push(y);
-							}
-						} else if (items[i].hasAttribute("x1")) {
-							if (xy.contains("x")) {
-								var x1 = parseFloat(items[i].attributes.getNamedItem("x1").value);
-								values.push(x1);
-								var x2 = parseFloat(items[i].attributes.getNamedItem("x2").value);
-								values.push(x2);
-							}
-							if (xy.contains("y")) {
-								var y1 = parseFloat(items[i].attributes.getNamedItem("y1").value);
-								values.push(y1);
-								var y2 = parseFloat(items[i].attributes.getNamedItem("y2").value);
-								values.push(y2);
-							}
-						}
-					}
-				}
-				minmax.min=Math.min.apply(Math, values);
-				minmax.max=Math.max.apply(Math, values);
-			}
-
-			function drawSchematics(xmlDoc, zoom = 4) {
 				var instances=xmlDoc.getElementsByTagName("instance");
 				var parts=xmlDoc.getElementsByTagName("part");
 				var libraries = xmlDoc.getElementsByTagName("library");
 				var nets = xmlDoc.getElementsByTagName("net");
-				var symbols = xmlDoc.getElementsByTagName("symbol");
-				var segments = xmlDoc.getElementsByTagName("segment");
-				// get minimum and maximum abs x or y of symbols
-				symbolMinMax = {min: 0, max: 0};
-				getMinMax(symbols, "xy", symbolMinMax);
-				// get minimum and maximum x and y of parts, nets
-				partNetXMinMax = {min: 0, max: 0};
-				getMinMax(segments, "x", partNetXMinMax);
-				partNetYMinMax = {min: 0, max: 0};
-				getMinMax(segments, "y", partNetYMinMax);
-				var canvas = document.getElementById("myCanvas");
-				// resize canvas to max(x)+max(symbolX,symbolY)-min(x)-max(symbolX,symbolY), max(y)+max(symbolX,symbolY)-min(y)-max(symbolX,symbolY)
-				var sabsmax = 0;
-				if (Math.abs(symbolMinMax.max) > Math.abs(symbolMinMax.min)) {
-					sabsmax = Math.abs(symbolMinMax.max);
-				} else {
-					sabsmax = Math.abs(symbolMinMax.min);
+
+				if (draw) {
+					var availableHeight = window.innerHeight;
+					var availableWidth = window.innerWidth;
+					var aspectratio = availableWidth/availableHeight;
+					var height2 = (maxDrawY-minDrawY);
+					var width2 = (maxDrawX-minDrawX);
+					var heightratio = availableHeight/height2;
+					var widthratio = availableWidth/width2;
+					if (heightratio > widthratio) {
+						width2 = height2/aspectratio;
+					} else {
+						height2 = width2*aspectratio;
+					}
+
+// 					document.getElementById("list").innerHTML = "Window: width: "+widthratio+",height: "+heightratio+", xmin: "+minDrawX+", xmax: "+maxDrawX+", ymin: "+minDrawY+", ymax: "+maxDrawY+", canvas height: "+height2+", canvas width: "+width2+"<br>";
+					canvas.width = height2;
+					canvas.height = width2;
+
+					var ctx = canvas.getContext("2d");
+					ctx.clearRect(0, 0, canvas.width, canvas.height);
+					ctx.font="10px sans-serif"
+					ctx.setTransform(1,0,0,1,-minDrawX,-minDrawY+10);
 				}
-				sabsmax=10;
-				var xmax = partNetXMinMax.max;
-				var xmin = partNetXMinMax.min;
-				var ymax = partNetYMinMax.max;
-				var ymin = partNetYMinMax.min;
-				var height = (xmax+2*sabsmax-xmin)*zoom;
-				var width = (ymax+2*sabsmax-ymin)*zoom;
-				document.getElementById("list").innerHTML = "Symbol: min: "+symbolMinMax.min+", max: "+symbolMinMax.max+", Parts/Nets: xmin: "+partNetXMinMax.min+", xmax: "+partNetXMinMax.max+", ymin: "+partNetYMinMax.min+", ymax: "+partNetYMinMax.max+", canvas height: "+height+", canvas width: "+width+"<br>";
-				canvas.width = height;
-				canvas.height = width;
-
-				var ctx = canvas.getContext("2d");
-				ctx.clearRect(0, 0, canvas.width, canvas.height);				
-				ctx.font="10px sans-serif"
-				// center canvas around max(x)+2*max(symbolX,symbolY)+min(x), max(y)+2*max(symbolX,symbolY)-min(y)
-// 				ctx.setTransform(1,0,0,1,(-partNetXMinMax.min+sabsmax)*zoom,-(-partNetYMinMax.min+sabsmax)*zoom);
-				ctx.setTransform(1,0,0,1,(-ymin+sabsmax/2)*zoom,height-(xmax+sabsmax/2)*zoom);
-
-				// instances/instance(part) -> parts/part(name), library,deviceset,device -> symbol
-
 
 				for (var i=0;i<instances.length;i++) {
 					var x = parseFloat(instances[i].attributes.getNamedItem("x").value)*1;
@@ -226,7 +204,6 @@
 					var partName = instances[i].attributes.getNamedItem("part").value;
 					var rotation = 0;
 					if (instances[i].hasAttribute("rot")) rotation = parseFloat(instances[i].attributes.getNamedItem("rot").value.substring(1));
-				// 	document.write("Draw instance "+i+" of "+instances.length+", partname: "+partName+" at: x: "+1*x+", y: "+1*y+"<br>");
 					for (var p=0;p<parts.length;p++) {
 						if (parts[p].attributes.getNamedItem("name").value == partName) {
 							var library = parts[p].attributes.getNamedItem("library").value;
@@ -236,10 +213,8 @@
 							if (parts[p].attributes.getNamedItem("value") != null) {
 								value = parts[p].attributes.getNamedItem("value").value;
 							}
-				// 			document.write("Part found: library: "+library+", deviceset: "+deviceset+", device: "+device+", value: "+value+"<br>");
 							for (var l=0;l<libraries.length;l++) {
 								if (libraries[l].attributes.getNamedItem("name").value == library) {
-				// 					document.write("Found library<br>");
 									var symbolName = "";
 									var symbolX = 0;
 									var symbolY = 0;
@@ -255,7 +230,6 @@
 															symbolName = gate.attributes.getNamedItem("symbol").value;
 															symbolX = parseFloat(gate.attributes.getNamedItem("x").value);
 															symbolY = parseFloat(gate.attributes.getNamedItem("y").value);
-				// 											document.write("Symbol: "+symbolName+", Symbol offset: x: "+1*symbolX+", y: "+1*symbolY+"<br>");
 															break;
 														}
 													}
@@ -272,8 +246,7 @@
 												if (symbols[s].tagName == "symbol" && symbols[s].attributes.getNamedItem("name").value == symbolName) {
 													var drawX = 1*(x);//+symbolX);
 													var drawY = 1*(y);//+symbolY);
-				// 									document.write("Draw symbol at x: "+drawX+", y: "+drawY+"<br>");
-													drawSymbol(symbols[s], ctx, drawX, drawY, rotation, partName, value, zoom);
+													drawSymbol(symbols[s], ctx, drawX, drawY, rotation, partName, value, draw, zoom);
 													break;
 												}
 											}
@@ -296,10 +269,15 @@
 					var x2 = parseFloat(wire.attributes.getNamedItem("x2").value);
 					var y2 = parseFloat(wire.attributes.getNamedItem("y2").value);
 					var width = parseFloat(wire.attributes.getNamedItem("width").value);
-					ctx.beginPath();
-					ctx.moveTo(x1*zoom,y1*zoom*-1);
-					ctx.lineTo(x2*zoom,y2*zoom*-1);
-					ctx.stroke();
+					if (draw) {
+						ctx.beginPath();
+						ctx.moveTo(x1*zoom,y1*zoom*-1);
+						ctx.lineTo(x2*zoom,y2*zoom*-1);
+						ctx.stroke();
+					} else {
+						updateMinMax(x1*zoom,y1*-zoom);
+						updateMinMax(x2*zoom,y2*-zoom);
+					}
 					wire = wireIterator.iterateNext();
 				}
 				var junctionIterator = xmlDoc.evaluate('/eagle/drawing/schematic/sheets/sheet/nets/net/segment/junction', xmlDoc, null, XPathResult.ANY_TYPE, null );
@@ -307,9 +285,13 @@
 				while (junction) {
 					var x = parseFloat(junction.attributes.getNamedItem("x").value);
 					var y = parseFloat(junction.attributes.getNamedItem("y").value);
-					ctx.beginPath();
-					ctx.arc(zoom*x, zoom*y*-1, 0.5*zoom, 0, 2 * Math.PI, false);
-					ctx.fill();
+					if (draw) {
+						ctx.beginPath();
+						ctx.arc(zoom*x, zoom*y*-1, 0.5*zoom, 0, 2 * Math.PI, false);
+						ctx.fill();
+					} else {
+						updateMinMax(x*zoom,y*-zoom);
+					}
 					junction = junctionIterator.iterateNext();
 				}
 				var labelIterator = xmlDoc.evaluate('/eagle/drawing/schematic/sheets/sheet/nets/net/segment/label', xmlDoc, null, XPathResult.ANY_TYPE, null );
@@ -317,8 +299,12 @@
 				while (label) {
 					var x = parseFloat(label.attributes.getNamedItem("x").value);
 					var y = parseFloat(label.attributes.getNamedItem("y").value);
-					ctx.textBaseline="bottom";
-					ctx.fillText(label.parentNode.parentNode.attributes.getNamedItem("name").value,zoom*x,zoom*y*-1);
+					if (draw) {
+						ctx.textBaseline="bottom";
+						ctx.fillText(label.parentNode.parentNode.attributes.getNamedItem("name").value,zoom*x,zoom*y*-1);
+					} else {
+						updateMinMax(x*zoom,y*-zoom);
+					}
 					label = labelIterator.iterateNext();
 				}
 			}
